@@ -32,8 +32,6 @@ type AggRow = {
   daysLastWeek: number;
   daysThisWeek: number;
   days14d: number;
-  amDays14d: number;
-  pmDays14d: number;
   suggest: boolean;
   reasons: string[];
 };
@@ -77,14 +75,14 @@ function entriesToPresences(entries: DayEntry[]): DayPresence[] {
   return out;
 }
 
-/** Agregação para os 14 dias e semanas correntes */
+/** Agregação para os 14 dias e semanas correntes (sem AM/PM 14d) */
 function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
   const thisWeekStart = weekStart, nextWeekStart = addDays(thisWeekStart,7), lastWeekStart = addDays(thisWeekStart,-7);
   const seenDay = new Set<string>();
   type Mut = Omit<AggRow,"suggest"|"reasons"> & { suggest?: boolean; reasons?: string[] };
   const byId = new Map<string, Mut>();
   const ensure = (id:string, name:string) => {
-    if (!byId.has(id)) byId.set(id, { driverId:id, driverName:name, daysLastWeek:0, daysThisWeek:0, days14d:0, amDays14d:0, pmDays14d:0 });
+    if (!byId.has(id)) byId.set(id, { driverId:id, driverName:name, daysLastWeek:0, daysThisWeek:0, days14d:0 });
     return byId.get(id)!;
   };
 
@@ -95,8 +93,9 @@ function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
     const d = toDate(p.date);
     const row = ensure(p.driverId, p.driverName);
 
-    if (d >= addDays(thisWeekStart,-7) && d < nextWeekStart) { // janela 14d
-      row.days14d += 1; if (p.am) row.amDays14d+=1; if (p.pm) row.pmDays14d+=1;
+    // janela 14 dias: thisWeekStart-7 (inclusive) até nextWeekStart (exclusive)
+    if (d >= addDays(thisWeekStart,-7) && d < nextWeekStart) {
+      row.days14d += 1; // presença AM OU PM conta como 1 dia
     }
     if (d >= thisWeekStart && d < nextWeekStart) row.daysThisWeek += 1;
     else if (d >= lastWeekStart && d < thisWeekStart) row.daysLastWeek += 1;
@@ -156,7 +155,7 @@ export default function App() {
     try { await signOutApp(); } catch (e) { console.error(e); }
   }
 
-  // Conectividade (opcional, só informativo)
+  // Conectividade (informativo)
   const [online, setOnline] = useState<boolean>(navigator.onLine);
   useEffect(() => {
     const on = () => setOnline(true); const off = () => setOnline(false);
@@ -345,10 +344,18 @@ export default function App() {
         <section className="card">
           <div style={{fontWeight:600, marginBottom:6}}>Ações</div>
           <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-            <button className="btn" onClick={()=> {
-              const header = ["driverId","driverName","daysLastWeek","daysThisWeek","days14d","amDays14d","pmDays14d","suggestDayOff","reasons"];
+            <button className="btn" onClick={()=>{
+              const header = ["driverId","driverName","daysLastWeek","daysThisWeek","days14d","suggestDayOff","reasons"];
               const lines = [header.join(",")];
-              for (const r of rows) lines.push([r.driverId,`"${r.driverName}"`,r.daysLastWeek,r.daysThisWeek,r.days14d,r.amDays14d,r.pmDays14d,r.suggest?"YES":"NO",`"${r.reasons.join("; ")}"`].join(","));
+              for (const r of rows) lines.push([
+                r.driverId,
+                `"${r.driverName}"`,
+                r.daysLastWeek,
+                r.daysThisWeek,
+                r.days14d,
+                r.suggest?"YES":"NO",
+                `"${r.reasons.join("; ")}"`
+              ].join(","));
               const blob = new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8;"}); const url = URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`egx-days-summary-${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
             }}>Exportar CSV (resumo)</button>
             <button className="btn" onClick={clearAll}>Limpar TODOS os dias (local)</button>
@@ -434,8 +441,6 @@ export default function App() {
                   <th>Dias (LW)</th>
                   <th>Dias (TW)</th>
                   <th>Dias (14d)</th>
-                  <th>AM (14d)</th>
-                  <th>PM (14d)</th>
                   <th>Sugestão</th>
                 </tr>
               </thead>
@@ -446,8 +451,6 @@ export default function App() {
                     <td style={{textAlign:"center"}}>{r.daysLastWeek}</td>
                     <td style={{textAlign:"center"}}>{r.daysThisWeek}</td>
                     <td style={{textAlign:"center"}}>{r.days14d}</td>
-                    <td style={{textAlign:"center"}}>{r.amDays14d}</td>
-                    <td style={{textAlign:"center"}}>{r.pmDays14d}</td>
                     <td>
                       {r.suggest
                         ? <span className="badge-warn">Sugerir Day Off ({r.reasons.join("; ")})</span>
