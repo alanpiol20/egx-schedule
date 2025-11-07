@@ -163,11 +163,7 @@ export default function App() {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
-  // Logo
-  const [logoUrl,setLogoUrl] = useState<string|null>(()=>{ try{return localStorage.getItem("egx_logo_url");}catch{return null;}});
-  const onLogoFile = (file: File) => {
-    const r = new FileReader(); r.onload=()=>{ const data=String(r.result||""); setLogoUrl(data); try{localStorage.setItem("egx_logo_url",data);}catch{} }; r.readAsDataURL(file);
-  };
+  
 
   // Form diário
   const [dateInput,setDateInput] = useState("");
@@ -315,7 +311,7 @@ export default function App() {
     <div className="app">
       {/* Header */}
       <header className="header">
-        {logoUrl ? <img src={logoUrl} alt="EGX" className="logo" /> : <div className="logo">EGX</div>}
+        <div className="logo">EGX</div>
         <div style={{flex:1}}>
           <h1 className="title">EGX Schedule Balancer</h1>
           <div className="subtitle">EGX Logistics</div> 
