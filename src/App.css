@@ -336,6 +336,7 @@ td:first-child {
     #000 100%
   );
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  margin-bottom: 7px;
 }
 
 .summary-card-header {
