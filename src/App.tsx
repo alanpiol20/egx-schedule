@@ -32,6 +32,8 @@ type AggRow = {
   daysLastWeek: number;
   daysThisWeek: number;
   days14d: number;
+  doublesThisWeek: number; // quantos double shifts na semana atual
+  doubles14d: number;      // quantos double shifts nos últimos 14 dias
   suggest: boolean;
   reasons: string[];
 };
@@ -116,13 +118,13 @@ function entriesToPresences(entries: DayEntry[]): DayPresence[] {
   return out;
 }
 
-/** Agregação para os 14 dias e semanas correntes (sem AM/PM 14d) */
+/** Agregação para semana passada / atual / 14 dias + doubles */
 function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
-  const thisWeekStart = weekStart,
-    nextWeekStart = addDays(thisWeekStart, 7),
-    lastWeekStart = addDays(thisWeekStart, -7);
+  const thisWeekStart = weekStart;
+  const nextWeekStart = addDays(thisWeekStart, 7);
+  const lastWeekStart = addDays(thisWeekStart, -7);
 
-  const seenDay = new Set<string>();
+  const seenDay = new Set<string>(); // garante 1 contagem por driver/dia
   type Mut = Omit<AggRow, "suggest" | "reasons"> & {
     suggest?: boolean;
     reasons?: string[];
@@ -137,6 +139,8 @@ function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
         daysLastWeek: 0,
         daysThisWeek: 0,
         days14d: 0,
+        doublesThisWeek: 0,
+        doubles14d: 0,
       });
     return byId.get(id)!;
   };
@@ -148,13 +152,23 @@ function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
 
     const d = toDate(p.date);
     const row = ensure(p.driverId, p.driverName);
+    const double = p.am && p.pm;
 
-    // 14 dias: thisWeekStart - 7 (inclusive) até nextWeekStart (exclusive)
+    // janela 14 dias: [thisWeekStart-7, nextWeekStart)
     if (d >= addDays(thisWeekStart, -7) && d < nextWeekStart) {
-      row.days14d += 1; // presença AM OU PM = 1 dia
+      row.days14d += 1;            // presença (AM ou PM) conta 1 dia
+      if (double) row.doubles14d += 1;
     }
-    if (d >= thisWeekStart && d < nextWeekStart) row.daysThisWeek += 1;
-    else if (d >= lastWeekStart && d < thisWeekStart) row.daysLastWeek += 1;
+
+    // semana atual
+    if (d >= thisWeekStart && d < nextWeekStart) {
+      row.daysThisWeek += 1;
+      if (double) row.doublesThisWeek += 1;
+    }
+    // semana passada
+    else if (d >= lastWeekStart && d < thisWeekStart) {
+      row.daysLastWeek += 1;
+    }
   }
 
   const MAX_DAYS_THIS_WEEK = 5;
@@ -162,18 +176,18 @@ function aggregateDays(presences: DayPresence[], weekStart: Date): AggRow[] {
 
   const rows: AggRow[] = Array.from(byId.values()).map((r) => {
     const reasons: string[] = [];
-    if (r.daysThisWeek >= MAX_DAYS_THIS_WEEK)
-      reasons.push("muitos dias na semana");
+    if (r.daysThisWeek >= MAX_DAYS_THIS_WEEK) reasons.push("muitos dias na semana");
     if (r.days14d >= MAX_DAYS_14D) reasons.push("muitos dias em 14 dias");
     return { ...r, suggest: reasons.length > 0, reasons };
   });
 
+  // Ordenação: sugeridos primeiro, depois mais doubles na semana, depois mais dias na semana, depois 14d
   rows.sort((a, b) => {
-    const sa = a.suggest ? 0 : 1,
-      sb = b.suggest ? 0 : 1;
+    const sa = a.suggest ? 0 : 1;
+    const sb = b.suggest ? 0 : 1;
     if (sa !== sb) return sa - sb;
-    if (b.daysThisWeek !== a.daysThisWeek)
-      return b.daysThisWeek - a.daysThisWeek;
+    if (b.doublesThisWeek !== a.doublesThisWeek) return b.doublesThisWeek - a.doublesThisWeek;
+    if (b.daysThisWeek !== a.daysThisWeek) return b.daysThisWeek - a.daysThisWeek;
     return b.days14d - a.days14d;
   });
 
@@ -387,10 +401,10 @@ export default function App() {
   // Semanas e resumo
   const today = new Date();
   const thisWeekStart = useMemo(() => startOfWeekMonday(today), [today]);
-  const lastWeekStart = addDays(thisWeekStart, -7),
-    nextWeekStart = addDays(thisWeekStart, 7),
-    thisWeekEnd = addDays(nextWeekStart, -1),
-    lastWeekEnd = addDays(thisWeekStart, -1);
+  const lastWeekStart = addDays(thisWeekStart, -7);
+  const nextWeekStart = addDays(thisWeekStart, 7);
+  const thisWeekEnd = addDays(nextWeekStart, -1);
+  const lastWeekEnd = addDays(thisWeekStart, -1);
 
   const presences = useMemo(
     () => entriesToPresences(dayEntries),
@@ -487,14 +501,8 @@ export default function App() {
         <section className="card">
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Janelas</div>
           <div className="subtitle">
-            <div>
-              Semana passada: {formatDate(lastWeekStart)} →{" "}
-              {formatDate(lastWeekEnd)}
-            </div>
-            <div>
-              Semana atual: {formatDate(thisWeekStart)} →{" "}
-              {formatDate(thisWeekEnd)}
-            </div>
+            <div>Semana passada: {formatDate(lastWeekStart)} → {formatDate(lastWeekEnd)}</div>
+            <div>Semana atual: {formatDate(thisWeekStart)} → {formatDate(thisWeekEnd)}</div>
           </div>
         </section>
         <section className="card">
@@ -509,6 +517,8 @@ export default function App() {
                   "daysLastWeek",
                   "daysThisWeek",
                   "days14d",
+                  "doublesThisWeek", // NOVO
+                  "doubles14d",      // NOVO
                   "suggestDayOff",
                   "reasons",
                 ];
@@ -521,6 +531,8 @@ export default function App() {
                       r.daysLastWeek,
                       r.daysThisWeek,
                       r.days14d,
+                      r.doublesThisWeek, // NOVO
+                      r.doubles14d,      // NOVO
                       r.suggest ? "YES" : "NO",
                       `"${r.reasons.join("; ")}"`,
                     ].join(",")
@@ -612,9 +624,7 @@ export default function App() {
         {savedDates.length > 0 && (
           <div className="meta" style={{ marginTop: 8 }}>
             <b>Dias salvos:</b>
-            <div
-              className="dates-chips"
-            >
+            <div className="dates-chips">
               {savedDates.map((date) => {
                 const checked = !!selectedDates[date];
                 return (
@@ -676,6 +686,8 @@ export default function App() {
                     <th>Dias (LW)</th>
                     <th>Dias (TW)</th>
                     <th>Dias (14d)</th>
+                    <th>Double (TW)</th>   {/* NOVO */}
+                    <th>Double (14d)</th>  {/* NOVO */}
                     <th>Sugestão</th>
                   </tr>
                 </thead>
@@ -686,6 +698,8 @@ export default function App() {
                       <td style={{ textAlign: "center" }}>{r.daysLastWeek}</td>
                       <td style={{ textAlign: "center" }}>{r.daysThisWeek}</td>
                       <td style={{ textAlign: "center" }}>{r.days14d}</td>
+                      <td style={{ textAlign: "center" }}>{r.doublesThisWeek}</td> {/* NOVO */}
+                      <td style={{ textAlign: "center" }}>{r.doubles14d}</td>      {/* NOVO */}
                       <td>
                         {r.suggest ? (
                           <span className="badge-warn">
@@ -727,6 +741,15 @@ export default function App() {
                       <span className="label">14d</span>
                       <span className="value">{r.days14d}</span>
                     </div>
+                    {/* NOVOS PILLS */}
+                    <div className="summary-pill">
+                      <span className="label">DS TW</span>
+                      <span className="value">{r.doublesThisWeek}</span>
+                    </div>
+                    <div className="summary-pill">
+                      <span className="label">DS 14d</span>
+                      <span className="value">{r.doubles14d}</span>
+                    </div>
                   </div>
 
                   {r.reasons.length > 0 && (
@@ -742,8 +765,7 @@ export default function App() {
       </section>
 
       <div className="footer">
-        Regras: presença em AM ou PM conta <b>1 dia</b>. OFF não conta dia. Sem
-        horas.
+        Developed by Alan Piol C. 2025
       </div>
     </div>
   );

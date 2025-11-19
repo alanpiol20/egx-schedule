@@ -305,6 +305,9 @@ td:first-child {
   margin: 16px 0;
   font-size: 12px;
   color: var(--muted);
+  
+ 
+
 }
 
 /* ---------- Desktop x Mobile ---------- */
@@ -467,3 +470,20 @@ td:first-child {
     padding: 8px;
   }
 }
+
+/* Estado padrão (desktop): mostra desktop, esconde mobile */
+.desktop-only { display: block; }
+.mobile-only  { display: none; }
+
+/* MOBILE: até 900px de largura mostramos os cards mobile e escondemos a tabela */
+@media (max-width: 900px) {
+  .desktop-only { display: none; }
+  .mobile-only  { display: block; }
+}
+
+/* (Opcional) Tablet estreito: ajuste se quiser que a tabela apareça só acima de 1024px */
+@media (min-width: 901px) {
+  .desktop-only { display: block; }
+  .mobile-only  { display: none; }
+}
+
